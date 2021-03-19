@@ -1,0 +1,24 @@
+diff --git a/build-aux/config.sub b/build-aux/config.sub
+index 5864d28..85129f8 100755
+--- a/build-aux/config.sub
++++ b/build-aux/config.sub
+@@ -1256,8 +1256,6 @@ case $cpu-$vendor in
+ 				;;
+ 
+ 			*)
+-				echo Invalid configuration \`"$1"\': machine \`"$cpu-$vendor"\' not recognized 1>&2
+-				exit 1
+ 				;;
+ 		esac
+ 		;;
+--- a/libcharset/build-aux/config.sub
++++ b/libcharset/build-aux/config.sub
+@@ -1256,8 +1256,6 @@ case $cpu-$vendor in
+ 				;;
+ 
+ 			*)
+-				echo Invalid configuration \`"$1"\': machine \`"$cpu-$vendor"\' not recognized 1>&2
+-				exit 1
+ 				;;
+ 		esac
+ 		;;

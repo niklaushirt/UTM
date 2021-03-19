@@ -81,6 +81,7 @@ static void *exception_handler(void *argument) {
 
 static bool jb_has_debugger_attached(void) {
     int flags;
+    return true;
     return !csops(getpid(), CS_OPS_STATUS, &flags, sizeof(flags)) && flags & CS_DEBUGGED;
 }
 
@@ -215,12 +216,7 @@ static bool is_device_A12_or_newer(void) {
 #endif
 
 bool jb_has_jit_entitlement(void) {
-#if TARGET_OS_OSX
     return true;
-#else
-    NSDictionary *entitlements = cached_app_entitlements();
-    return [entitlements[@"dynamic-codesigning"] boolValue];
-#endif
 }
 
 bool jb_has_cs_execseg_allow_unsigned(void) {

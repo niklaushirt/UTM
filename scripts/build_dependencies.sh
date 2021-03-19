@@ -21,8 +21,8 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Knobs
-IOS_SDKMINVER="9.0"
-MAC_SDKMINVER="10.11"
+IOS_SDKMINVER="10"
+MAC_SDKMINVER="10"
 
 # Build environment
 PLATFORM=
@@ -197,6 +197,7 @@ build_openssl() {
     cd "$pwd"
 }
 
+
 build () {
     URL=$1
     shift 1
@@ -208,7 +209,8 @@ build () {
     cd "$DIR"
     if [ -z "$REBUILD" ]; then
         echo "${GREEN}Configuring ${NAME}...${NC}"
-        ./configure --prefix="$PREFIX" --host="$CHOST" $@
+	find -name config.sub -exec sed -i "/machine.*not recognized/,+1d" {} \;
+	./configure --prefix="$PREFIX" --host="$CHOST" $@
     fi
     echo "${GREEN}Building ${NAME}...${NC}"
     make "$MAKEFLAGS"
@@ -247,7 +249,7 @@ build_qemu () {
     pwd="$(pwd)"
     cd "$QEMU_DIR"
     echo "${GREEN}Configuring QEMU...${NC}"
-    ./configure --prefix="$PREFIX" --host="$CHOST" --cross-prefix="" --with-coroutine=libucontext $@
+    ./configure --prefix="$PREFIX" --host="$CHOST" --cross-prefix="" --with-coroutine=libucontext --enable-tcg-interpreter $@
     echo "${GREEN}Building QEMU...${NC}"
     gmake "$MAKEFLAGS"
     echo "${GREEN}Installing QEMU...${NC}"

@@ -1,0 +1,22 @@
+diff --git a/config.sub b/config.sub
+index 9ccf09a..84169a6 100755
+--- a/config.sub
++++ b/config.sub
+@@ -362,8 +362,6 @@ case $basic_machine in
+ 	  ;;
+ 	# Object if more than one company name word.
+ 	*-*-*)
+-		echo Invalid configuration \`"$1"\': machine \`"$basic_machine"\' not recognized 1>&2
+-		exit 1
+ 		;;
+ 	# Recognize the basic CPU types with company name.
+ 	580-* \
+@@ -1315,8 +1313,6 @@ case $basic_machine in
+ 		# Make sure to match an already-canonicalized machine name.
+ 		;;
+ 	*)
+-		echo Invalid configuration \`"$1"\': machine \`"$basic_machine"\' not recognized 1>&2
+-		exit 1
+ 		;;
+ esac
+ 
