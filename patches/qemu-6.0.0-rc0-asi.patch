@@ -1,0 +1,196 @@
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 9b6d7ddda..e0b0e56db 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -279,6 +279,13 @@ static int raw_normalize_devicepath(const char **filename, Error **errp)
+ }
+ #endif
+ 
++#if defined(CONFIG_IOS)
++static int probe_logical_blocksize(int fd, unsigned int *sector_size_p)
++{
++    return -ENOTSUP; /* not supported on iOS */
++}
++#else /* CONFIG_IOS */
++
+ /*
+  * Get logical block size via ioctl. On success store it in @sector_size_p.
+  */
+@@ -312,6 +319,8 @@ static int probe_logical_blocksize(int fd, unsigned int *sector_size_p)
+     return success ? 0 : -errno;
+ }
+ 
++#endif
++
+ /**
+  * Get physical block size of @fd.
+  * On success, store it in @blk_size and return 0.
+@@ -1408,12 +1417,24 @@ static bool preadv_present = true;
+ static ssize_t
+ qemu_preadv(int fd, const struct iovec *iov, int nr_iov, off_t offset)
+ {
++#ifdef CONFIG_DARWIN /* preadv introduced in macOS 11 */
++    if (!__builtin_available(macOS 11, iOS 14, watchOS 7, tvOS 14, *)) {
++        preadv_present = false;
++        return -ENOSYS;
++    } else
++#endif
+     return preadv(fd, iov, nr_iov, offset);
+ }
+ 
+ static ssize_t
+ qemu_pwritev(int fd, const struct iovec *iov, int nr_iov, off_t offset)
+ {
++#ifdef CONFIG_DARWIN /* pwritev introduced in macOS 11 */
++    if (!__builtin_available(macOS 11, iOS 14, watchOS 7, tvOS 14, *)) {
++        preadv_present = false;
++        return -ENOSYS;
++    } else
++#endif
+     return pwritev(fd, iov, nr_iov, offset);
+ }
+ 
+diff --git a/configure b/configure
+index 34f237ae6..ac874fda5 100755
+--- a/configure
++++ b/configure
+@@ -571,6 +571,21 @@ EOF
+   compile_object
+ }
+ 
++check_ios() {
++  cat > $TMPC <<EOF
++#ifdef __APPLE__
++#import "TargetConditionals.h"
++#if !TARGET_OS_IPHONE
++#error TARGET_OS_IPHONE not true
++#endif
++#endif
++int main(void) { return 0; }
++EOF
++  compile_object
++}
++
++
++
+ check_include() {
+ cat > $TMPC <<EOF
+ #include <$1>
+@@ -613,7 +628,11 @@ elif check_define __DragonFly__ ; then
+ elif check_define __NetBSD__; then
+   targetos='NetBSD'
+ elif check_define __APPLE__; then
+-  targetos='Darwin'
++  if check_ios ; then
++    targetos='iOS'
++  else
++    targetos='Darwin'
++  fi
+ else
+   # This is a fatal error, but don't report it yet, because we
+   # might be going to just print the --help text, or it might
+@@ -629,6 +648,22 @@ case $targetos in
+ Darwin)
+   HOST_DSOSUF=".dylib"
+   ;;
++iOS)
++  bsd="yes"
++  darwin="yes"
++  ios="yes"
++  if [ "$cpu" = "x86_64" ] ; then
++    QEMU_CFLAGS="-arch x86_64 $QEMU_CFLAGS"
++    QEMU_LDFLAGS="-arch x86_64 $QEMU_LDFLAGS"
++  fi
++  host_block_device_support="no"
++  audio_drv_list=""
++  audio_possible_drivers=""
++  QEMU_LDFLAGS="-framework CoreFoundation $QEMU_LDFLAGS"
++  # Disable attempts to use ObjectiveC features in os/object.h since they
++  # won't work when we're compiling with gcc as a C compiler.
++  QEMU_CFLAGS="-DOS_OBJECT_USE_OBJC=0 $QEMU_CFLAGS"
++;;
+ SunOS)
+   # $(uname -m) returns i86pc even on an x86_64 box, so default based on isainfo
+   if test -z "$cpu" && test "$(isainfo -k)" = "amd64"; then
+@@ -5549,6 +5584,10 @@ if test "$darwin" = "yes" ; then
+   echo "CONFIG_DARWIN=y" >> $config_host_mak
+ fi
+ 
++if test "$ios" = "yes" ; then
++  echo "CONFIG_IOS=y" >> $config_host_mak
++fi
++
+ if test "$solaris" = "yes" ; then
+   echo "CONFIG_SOLARIS=y" >> $config_host_mak
+ fi
+diff --git a/include/qemu/osdep.h b/include/qemu/osdep.h
+index 5bd1a6776..76cfa8f83 100644
+--- a/include/qemu/osdep.h
++++ b/include/qemu/osdep.h
+@@ -685,7 +685,7 @@ size_t qemu_get_host_physmem(void);
+ /**
+  * Platforms which do not support system() return ENOSYS
+  */
+-#ifndef HAVE_SYSTEM_FUNCTION
++#if !defined(HAVE_SYSTEM_FUNCTION) || defined(CONFIG_IOS)
+ #define system platform_does_not_support_system
+ static inline int platform_does_not_support_system(const char *command)
+ {
+diff --git a/meson.build b/meson.build
+index d9f0d4453..bcb175d82 100644
+--- a/meson.build
++++ b/meson.build
+@@ -181,7 +181,7 @@ if targetos == 'windows'
+                                       include_directories: include_directories('.'))
+ elif targetos == 'darwin'
+   coref = dependency('appleframeworks', modules: 'CoreFoundation')
+-  iokit = dependency('appleframeworks', modules: 'IOKit', required: false)
++  iokit = dependency('appleframeworks', modules: 'IOKit', required: 'CONFIG_IOS' not in config_host)
+ elif targetos == 'sunos'
+   socket = [cc.find_library('socket'),
+             cc.find_library('nsl'),
+@@ -1056,8 +1056,7 @@ if get_option('cfi')
+   add_global_link_arguments(cfi_flags, native: false, language: ['c', 'cpp', 'objc'])
+ endif
+ 
+-have_host_block_device = (targetos != 'darwin' or
+-    cc.has_header('IOKit/storage/IOMedia.h'))
++have_host_block_device = (targetos != 'darwin' or (cc.has_header('IOKit/storage/IOMedia.h') and ('CONFIG_IOS' not in config_host)))
+ 
+ #################
+ # config-host.h #
+@@ -1153,7 +1152,7 @@ config_host_data.set('HAVE_SYS_IOCCOM_H', cc.has_header('sys/ioccom.h'))
+ config_host_data.set('HAVE_SYS_KCOV_H', cc.has_header('sys/kcov.h'))
+ config_host_data.set('HAVE_SYSTEM_FUNCTION', cc.has_function('system', prefix: '#include <stdlib.h>'))
+ config_host_data.set('HAVE_HOST_BLOCK_DEVICE', have_host_block_device)
+-config_host_data.set('HAVE_SYS_DISK_H', cc.has_header('sys/disk.h'))
++config_host_data.set('HAVE_SYS_DISK_H', cc.has_header('sys/disk.h') and ('CONFIG_IOS' not in config_host))
+ 
+ config_host_data.set('CONFIG_PREADV', cc.has_function('preadv', prefix: '#include <sys/uio.h>'))
+ 
+diff --git a/tests/qtest/meson.build b/tests/qtest/meson.build
+index ba6ecaed3..dad92c996 100644
+--- a/tests/qtest/meson.build
++++ b/tests/qtest/meson.build
+@@ -47,12 +47,11 @@ qtests_i386 = \
+   (config_all_devices.has_key('CONFIG_TPM_TIS_ISA') ? ['tpm-tis-test'] : []) +              \
+   (config_all_devices.has_key('CONFIG_TPM_TIS_ISA') ? ['tpm-tis-swtpm-test'] : []) +        \
+   (config_all_devices.has_key('CONFIG_RTL8139_PCI') ? ['rtl8139-test'] : []) +              \
++  (not config_host.has_key('CONFIG_IOS') ? ['bios-tables-test', 'hd-geo-test'] : []) +      \
+   qtests_pci +                                                                              \
+   ['fdc-test',
+    'ide-test',
+-   'hd-geo-test',
+    'boot-order-test',
+-   'bios-tables-test',
+    'rtc-test',
+    'i440fx-test',
+    'fuzz-test',
+@@ -160,6 +159,7 @@ qtests_aarch64 = \
+   (cpu != 'arm' ? ['bios-tables-test'] : []) +                                                  \
+   (config_all_devices.has_key('CONFIG_TPM_TIS_SYSBUS') ? ['tpm-tis-device-test'] : []) +        \
+   (config_all_devices.has_key('CONFIG_TPM_TIS_SYSBUS') ? ['tpm-tis-device-swtpm-test'] : []) +  \
++  (cpu != 'arm' and not config_host.has_key('CONFIG_IOS') ? ['bios-tables-test'] : []) + \
+   ['arm-cpu-features',
+    'numa-test',
+    'boot-serial-test',

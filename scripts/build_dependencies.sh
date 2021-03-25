@@ -22,7 +22,7 @@ NC='\033[0m'
 
 # Knobs
 IOS_SDKMINVER="10"
-MAC_SDKMINVER="10"
+MAC_SDKMINVER="11"
 
 # Build environment
 PLATFORM=
@@ -249,7 +249,7 @@ build_qemu () {
     pwd="$(pwd)"
     cd "$QEMU_DIR"
     echo "${GREEN}Configuring QEMU...${NC}"
-    ./configure --prefix="$PREFIX" --host="$CHOST" --cross-prefix="" --with-coroutine=libucontext --enable-tcg-interpreter $@
+    ./configure --prefix="$PREFIX" --host="$CHOST" --cross-prefix="" --with-coroutine=libucontext --enable-tcg-interpreter --disable-vnc --disable-sdl $@
     echo "${GREEN}Building QEMU...${NC}"
     gmake "$MAKEFLAGS"
     echo "${GREEN}Installing QEMU...${NC}"
@@ -263,8 +263,13 @@ build_qemu () {
 
 steal_libucontext () {
     # HACK: use the libucontext built by qemu
-    cp "$QEMU_DIR/build/libucontext.a" "$PREFIX/lib/libucontext.a"
-    cp "$QEMU_DIR/libucontext/include/libucontext.h" "$PREFIX/include/libucontext.h"
+    cp "$QEMU_DIR/build/subprojects/libucontext/libucontext.a" "$PREFIX/lib/libucontext.a"
+    cp "$QEMU_DIR/subprojects/libucontext/include/libucontext/libucontext.h" "$PREFIX/include/libucontext.h"
+
+    # Steal the bits.h, too.
+    mkdir -p "$PREFIX/include/libucontext/"
+    cp "$QEMU_DIR/subprojects/libucontext/arch/aarch64/include/libucontext/bits.h" "$PREFIX/include/libucontext/bits.h"
+
 }
 
 build_spice_client () {
